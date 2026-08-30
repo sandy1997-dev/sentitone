@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+odia_agent_env/
+venv/
+env/
+
+# Database
+*.db
+
+# API keys
+api_keys.json
+
+# Secrets
+.env
+
+# Audio recordings (if not needed in repo)
+# recordings/
+# prompts/
+
+# Docker
+*.log
