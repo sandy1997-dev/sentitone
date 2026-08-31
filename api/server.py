@@ -51,25 +51,29 @@ def init_db():
     conn.close()
 init_db()
 
-# Load LLM
+# Load LLM (Mistral-based, avoids Qwen3 issue)
 print("Loading LLM...")
-model_name = "dheeyantra/dhee-nxtgen-qwen3-odia-v2"
+model_name = "FoundryAILabs/bharat-odia-7b-lora"
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(model_name, trust_remote_code=True, torch_dtype=torch.float16, device_map="auto")
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    trust_remote_code=True,
+    torch_dtype=torch.float16,
+    device_map="auto"
+)
 
 # Load STT
 print("Loading STT...")
 stt_model = IndicTranscriber()
 
-# Load TTS (IndicF5)
+# Load TTS (IndicF5) – may need GPU
 print("Loading IndicF5 TTS model...")
 tts_model = AutoModel.from_pretrained("Aditya02/IndicF5", trust_remote_code=True)
-# If on GPU, move model to cuda
 if torch.cuda.is_available():
     tts_model = tts_model.to("cuda")
 print("IndicF5 loaded!")
 
-# Voice profiles (reference audio files)
+# Voice profiles
 VOICE_PROFILES = {
     "female": {
         "ref_audio": "prompts/female_odia.wav",
@@ -95,7 +99,7 @@ def generate_tts(text: str, voice: str = "female") -> bytes:
         return buffer.getvalue()
     except Exception as e:
         print(f"TTS Error: {e}")
-        # Fallback: return silence
+        # Fallback silence
         audio = np.zeros(16000 * 2, dtype=np.int16)
         buffer = io.BytesIO()
         with wave.open(buffer, 'wb') as wf:
@@ -105,7 +109,7 @@ def generate_tts(text: str, voice: str = "female") -> bytes:
             wf.writeframes(audio.tobytes())
         return buffer.getvalue()
 
-# Emotion detection (rule-based)
+# Emotion detection
 def get_emotion(text):
     if any(w in text for w in ["ଦୁଃଖ", "କାନ୍ଦ", "ନିରାଶ", "ବିଳମ୍ବ"]):
         return "sad"
@@ -115,7 +119,7 @@ def get_emotion(text):
         return "happy"
     return "neutral"
 
-# Response cache for speed
+# Response cache
 response_cache = {}
 
 def generate_response(user_text):
@@ -126,7 +130,8 @@ def generate_response(user_text):
         f"You are a warm, empathetic Odia assistant for RTI services. The caller's emotion is '{emotion}'. "
         "If angry or sad, apologize and help. Keep responses short and conversational."
     )
-    prompt = f"<|im_start|>system\n{system_prompt}\n<|im_end|>\n<|im_start|>user\n{user_text}\n<|im_end|>\n<|im_start|>assistant\n"
+    # Mistral-7B uses a different chat format – we'll use a simple template
+    prompt = f"<s>[INST] {system_prompt}\n\nUser: {user_text} [/INST]"
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     with torch.inference_mode():
         outputs = model.generate(**inputs, max_new_tokens=60, do_sample=False)
