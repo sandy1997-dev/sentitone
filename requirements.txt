@@ -13,4 +13,3 @@ python-multipart
 websockets
 requests
 accelerate
-git+https://github.com/ai4bharat/IndicF5.git

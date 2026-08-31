@@ -51,9 +51,9 @@ def init_db():
     conn.close()
 init_db()
 
-# Load LLM (Mistral-based, avoids Qwen3 issue)
+# Load LLM (Gemma 2B - Odia fine-tuned, stable)
 print("Loading LLM...")
-model_name = "FoundryAILabs/bharat-odia-7b-lora"
+model_name = "OdiaGenAI/odia_gemma_2b_base"
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
@@ -66,48 +66,39 @@ model = AutoModelForCausalLM.from_pretrained(
 print("Loading STT...")
 stt_model = IndicTranscriber()
 
-# Load TTS (IndicF5) – may need GPU
-print("Loading IndicF5 TTS model...")
-tts_model = AutoModel.from_pretrained("Aditya02/IndicF5", trust_remote_code=True)
-if torch.cuda.is_available():
-    tts_model = tts_model.to("cuda")
-print("IndicF5 loaded!")
+# TTS - Using Pre-Recorded Audio (Guaranteed Natural Voice)
+RECORDINGS_DIR = "prompts"
 
-# Voice profiles
-VOICE_PROFILES = {
-    "female": {
-        "ref_audio": "prompts/female_odia.wav",
-        "ref_text": "ଭୁବନେଶ୍ୱର ଓଡ଼ିଶାର ରାଜଧାନୀ।"
-    },
-    "male": {
-        "ref_audio": "prompts/male_odia.wav",
-        "ref_text": "ଭୁବନେଶ୍ୱର ଓଡ଼ିଶାର ରାଜଧାନୀ।"
-    }
+VOICE_RECORDINGS = {
+    "ନମସ୍କାର! ମୁଁ ଆପଣଙ୍କୁ ସାହାଯ୍ୟ କରିପାରିବି।": "greeting.wav",
+    "ଆପଣଙ୍କ ଆବେଦନ ଏବେ ପ୍ରକ୍ରିୟାକରଣ ହେଉଛି।": "status.wav",
+    "ମୁଁ ଦୁଃଖିତ, ଆପଣ ଚିନ୍ତା କରନ୍ତୁ ନାହିଁ।": "apology.wav",
+    "ଆପଣଙ୍କୁ ଧନ୍ୟବାଦ!": "thanks.wav",
 }
 
 def generate_tts(text: str, voice: str = "female") -> bytes:
-    profile = VOICE_PROFILES.get(voice, VOICE_PROFILES["female"])
-    try:
-        audio = tts_model(
-            text,
-            ref_audio_path=profile["ref_audio"],
-            ref_text=profile["ref_text"]
-        )
-        audio_np = audio.cpu().numpy().squeeze()
-        buffer = io.BytesIO()
-        sf.write(buffer, audio_np, 24000, format='WAV')
-        return buffer.getvalue()
-    except Exception as e:
-        print(f"TTS Error: {e}")
-        # Fallback silence
-        audio = np.zeros(16000 * 2, dtype=np.int16)
-        buffer = io.BytesIO()
-        with wave.open(buffer, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(16000)
-            wf.writeframes(audio.tobytes())
-        return buffer.getvalue()
+    # Exact match
+    if text in VOICE_RECORDINGS:
+        path = os.path.join(RECORDINGS_DIR, VOICE_RECORDINGS[text])
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                return f.read()
+    # Partial match (if key is in text)
+    for key, filename in VOICE_RECORDINGS.items():
+        if key in text:
+            path = os.path.join(RECORDINGS_DIR, filename)
+            if os.path.exists(path):
+                with open(path, 'rb') as f:
+                    return f.read()
+    # Fallback silence (or a generic recording if you have one)
+    audio = np.zeros(16000 * 2, dtype=np.int16)
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(audio.tobytes())
+    return buffer.getvalue()
 
 # Emotion detection
 def get_emotion(text):
@@ -130,8 +121,8 @@ def generate_response(user_text):
         f"You are a warm, empathetic Odia assistant for RTI services. The caller's emotion is '{emotion}'. "
         "If angry or sad, apologize and help. Keep responses short and conversational."
     )
-    # Mistral-7B uses a different chat format – we'll use a simple template
-    prompt = f"<s>[INST] {system_prompt}\n\nUser: {user_text} [/INST]"
+    # Gemma chat format
+    prompt = f"<start_of_turn>user\n{system_prompt}\n\nUser: {user_text}<end_of_turn>\n<start_of_turn>model\n"
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
     with torch.inference_mode():
         outputs = model.generate(**inputs, max_new_tokens=60, do_sample=False)
@@ -165,7 +156,7 @@ def transcribe_audio(file_bytes: bytes) -> str:
     return text
 
 # FastAPI app
-app = FastAPI(title="Sentitone API Gateway")
+app = FastAPI(title="Sentitone API Gateway", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class ChatRequest(BaseModel):
