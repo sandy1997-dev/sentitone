@@ -1,7 +1,6 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
 from fastapi import FastAPI, Request
-import uvicorn
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch, uvicorn
 
 app = FastAPI()
 device = "cuda" if torch.cuda.is_available() else "cpu"
