@@ -8,7 +8,7 @@ nest_asyncio.apply()
 from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from indic_asr_onnx import IndicTranscriber
 from typing import Optional
 import io, tempfile, numpy as np, soundfile as sf, secrets, sqlite3, datetime, re
@@ -66,7 +66,7 @@ model = AutoModelForCausalLM.from_pretrained(
 print("Loading STT...")
 stt_model = IndicTranscriber()
 
-# TTS - Using Pre-Recorded Audio (Guaranteed Natural Voice)
+# TTS - Pre-recorded audio (works reliably)
 RECORDINGS_DIR = "prompts"
 
 VOICE_RECORDINGS = {
@@ -77,20 +77,18 @@ VOICE_RECORDINGS = {
 }
 
 def generate_tts(text: str, voice: str = "female") -> bytes:
-    # Exact match
     if text in VOICE_RECORDINGS:
         path = os.path.join(RECORDINGS_DIR, VOICE_RECORDINGS[text])
         if os.path.exists(path):
             with open(path, 'rb') as f:
                 return f.read()
-    # Partial match (if key is in text)
     for key, filename in VOICE_RECORDINGS.items():
         if key in text:
             path = os.path.join(RECORDINGS_DIR, filename)
             if os.path.exists(path):
                 with open(path, 'rb') as f:
                     return f.read()
-    # Fallback silence (or a generic recording if you have one)
+    # Fallback silence
     audio = np.zeros(16000 * 2, dtype=np.int16)
     buffer = io.BytesIO()
     with wave.open(buffer, 'wb') as wf:
